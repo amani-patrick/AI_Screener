@@ -74,7 +74,7 @@ export default function ApplicantsPage() {
               <Users className="h-8 w-8 text-cyan-400" />
               Applicants
             </h1>
-            <p className="text-gray-400 mt-1">Manage candidate profiles and their qualifications</p>
+            <p className="text-gray-400 mt-1">Manage candidate profiles and their qualifications.</p>
           </div>
           <div className="flex items-center gap-3">
             <Link
