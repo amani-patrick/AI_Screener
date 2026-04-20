@@ -9,6 +9,7 @@ backend/test_gemini.js
 backend/test_gemini.ts
 backend/tests/setup.ts
 .env
+frontend/src/.next/
 
 backend/src/env.ts
 bulk_post_applicants
