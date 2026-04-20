@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -31,7 +31,7 @@ import { AILoader, PageLoader } from '@/components/Loading';
 import type { AppDispatch, RootState } from '@/store';
 import { fetchJobs, fetchApplicants, resetScreening, startScreening, fetchScreeningResult, fetchScreeningHistory } from '@/store';
 
-export default function ScreeningPage() {
+function ScreeningContent() {
   const searchParams = useSearchParams();
   const preselectedJobId = searchParams.get('jobId');
   const dispatch = useDispatch<AppDispatch>();
@@ -765,5 +765,24 @@ function ResultStat({ icon: Icon, label, value, color }: {
       <p className="text-2xl font-bold text-white">{value}</p>
       <p className="text-xs text-gray-400">{label}</p>
     </div>
+  );
+}
+
+function ScreeningFallback() {
+  return (
+    <div className="min-h-screen bg-[#0b1020] flex items-center justify-center">
+      <div className="animate-pulse flex flex-col items-center">
+        <div className="h-12 w-12 rounded-full bg-white/10 mb-4" />
+        <div className="h-4 w-32 bg-white/10 rounded" />
+      </div>
+    </div>
+  );
+}
+
+export default function ScreeningPage() {
+  return (
+    <Suspense fallback={<ScreeningFallback />}>
+      <ScreeningContent />
+    </Suspense>
   );
 }
