@@ -10,5 +10,5 @@ backend/test_gemini.js
 backend/test_gemini.ts
 backend/tests/setup.ts
 .env
-env.ts
+
 backend/src/env.ts
