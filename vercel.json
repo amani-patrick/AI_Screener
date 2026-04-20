@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm --filter frontend build",
-  "outputDirectory": "dist",
+  "buildCommand": "pnpm build",
+
   "framework": "nextjs"
 }
