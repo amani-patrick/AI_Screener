@@ -1,0 +1,4 @@
+node_modules/
+.env
+bulk_post_applicants.js
+test_applicants.json
