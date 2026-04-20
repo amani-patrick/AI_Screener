@@ -11,3 +11,8 @@ backend/tests/setup.ts
 .env
 
 backend/src/env.ts
+bulk_post_applicants
+sample_jobs.json
+sample_applicants.csv
+bulk_post_jobs.js
+bulk_post_applicants
