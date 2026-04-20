@@ -1,3 +1,6 @@
 .vscode/
 node_modules/
-*.json
+test_applicants.json
+bulk_post_applicants.js
+
+.next/
