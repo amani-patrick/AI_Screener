@@ -64,6 +64,7 @@ export async function register(req: Request, res: Response) {
         id: user._id.toString(),
         firstName: user.firstName,
         lastName: user.lastName,
+        fullName: (user as any).fullName || `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role,
         avatarUrl: user.avatarUrl,
@@ -131,6 +132,7 @@ export async function login(req: Request, res: Response) {
         id: user._id.toString(),
         firstName: user.firstName,
         lastName: user.lastName,
+        fullName: (user as any).fullName || `${user.firstName} ${user.lastName}`,
         email: user.email,
         role: user.role,
         avatarUrl: user.avatarUrl,
@@ -155,6 +157,36 @@ export async function login(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       error: 'Failed to login',
+    } satisfies ApiResponse);
+  }
+}
+
+/**
+ * POST /api/auth/logout
+ * Logout user
+ */
+export async function logout(req: Request, res: Response) {
+  try {
+    const userId = (req as any).userId;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+      } satisfies ApiResponse);
+    }
+
+    logger.info(`[Auth] User logged out: ${userId}`);
+
+    return res.json({
+      success: true,
+      message: 'Logout successful',
+    } satisfies ApiResponse);
+  } catch (err) {
+    logger.error('[Auth] logout error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to logout',
     } satisfies ApiResponse);
   }
 }
@@ -186,6 +218,7 @@ export async function getMe(req: Request, res: Response) {
       id: user._id.toString(),
       firstName: user.firstName,
       lastName: user.lastName,
+      fullName: (user as any).fullName || `${user.firstName} ${user.lastName}`,
       email: user.email,
       role: user.role,
       avatarUrl: user.avatarUrl,

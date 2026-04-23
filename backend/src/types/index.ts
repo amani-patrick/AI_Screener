@@ -20,6 +20,7 @@ export interface TalentProfile{
   fullName: string;
   email: string;
   phone?: string;
+  createdBy?: string;
   location: {
     city: string;
     country: string;
@@ -135,6 +136,7 @@ export interface ScreeningRequest {
   applicantIds: string[];
   idempotencyKey?: string;
   applicantSetHash?: string;
+  userId?: string;
   status: ScreeningStatus;
   shortlistSize: 10 | 20;
   createdAt: string;
@@ -210,6 +212,7 @@ export interface UserProfile {
   id: string;
   firstName: string;
   lastName: string;
+  fullName?: string;
   email: string;
   role: 'admin' | 'manager' | 'recruiter';
   avatarUrl?: string;

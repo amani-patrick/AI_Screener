@@ -5,8 +5,15 @@ import type { ApiResponse } from '../types';
 
 export async function listApplicants(req: Request, res: Response) {
   try {
-    const { page = 1, pageSize = 20, search, country } = req.query;
+    const userId = (req as any).userId;
+    const { page = 1, pageSize = 7, search, country } = req.query;
     const filter: Record<string, any> = {};
+    
+    // Filter applicants by the logged-in user (createdBy)
+    if (userId) {
+      filter.createdBy = userId;
+    }
+    
     if (search) filter.$or = [
       { fullName: { $regex: search, $options: 'i' } },
       { headline: { $regex: search, $options: 'i' } },

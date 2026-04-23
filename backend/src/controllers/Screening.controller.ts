@@ -20,11 +20,13 @@ export async function createScreening(req: Request, res: Response) {
       return res.status(404).json({ success: false, error: 'Job not found' } satisfies ApiResponse);
     }
 
-    // Fetch applicants
+    const userId = req.userId || 'demo-recruiter';
+
+    // Fetch applicants - filter by user's applicants or system applicants (createdBy is null/undefined)
     const ids = applicantIds && applicantIds.length > 0 ? applicantIds : undefined;
     const applicants = ids
-      ? await Applicant.find({ _id: { $in: ids } })
-      : await Applicant.find({});
+      ? await Applicant.find({ _id: { $in: ids }, $or: [{ createdBy: userId }, { createdBy: { $exists: false } }] })
+      : await Applicant.find({ $or: [{ createdBy: userId }, { createdBy: { $exists: false } }] });
 
     if (applicants.length === 0) {
       return res.status(400).json({ success: false, error: 'No applicants found to screen' } satisfies ApiResponse);
@@ -54,7 +56,7 @@ export async function createScreening(req: Request, res: Response) {
     if (existingInFlight) {
       return res.status(409).json({
         success: false,
-        error: 'A screening request for this job and applicant set is already processing',
+        error: 'A screening request for this job and applicant set is already in progress',
         data: { screeningRequestId: existingInFlight._id.toString() },
       } satisfies ApiResponse);
     }
@@ -66,11 +68,16 @@ export async function createScreening(req: Request, res: Response) {
       applicantSetHash,
       idempotencyKey,
       shortlistSize,
+      userId,
       status: 'processing',
     });
 
+    // Increment job's applicant count
+    await Job.findByIdAndUpdate(job._id, {
+      $inc: { applicantsCount: applicants.length }
+    });
+
     // Run screening asynchronously 
-    const userId = (req.headers['x-user-id'] as string) || 'demo-recruiter';
     runScreeningAsync(screeningRequest._id.toString(), job.toObject(), applicants, shortlistSize, userId);
 
     return res.status(202).json({
@@ -93,7 +100,7 @@ async function runScreeningAsync(
   screeningRequestId: string,
   job: any,
   applicants: any[],
-  shortlistSize: 10 | 20,
+  shortlistSize: 5 | 10 | 15 | 20,
   userId: string = 'demo-recruiter',
 ) {
   try {
@@ -229,12 +236,13 @@ export async function uploadCSVApplicants(req: Request, res: Response) {
       return [resumeParserService.parseCSVRow(normalizeCSVRow(row))];
     });
 
+    const userId = req.userId || 'demo-recruiter';
     const inserted: any[] = [];
     for (const profile of profiles) {
       try {
         const doc = await Applicant.findOneAndUpdate(
           { email: profile.email },
-          { $setOnInsert: { ...profile } },
+          { $set: { createdBy: userId }, $setOnInsert: { ...profile } },
           { upsert: true, new: true },
         );
         inserted.push(doc);
@@ -261,7 +269,9 @@ export async function uploadCSVApplicants(req: Request, res: Response) {
 //  Get all screening history 
 export async function listScreenings(req: Request, res: Response) {
   try {
-    const screenings = await ScreeningRequestModel.find()
+    const userId = req.userId || 'demo-recruiter';
+    
+    const screenings = await ScreeningRequestModel.find({ userId })
       .sort({ createdAt: -1 })
       .limit(50);
 

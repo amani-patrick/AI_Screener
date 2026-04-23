@@ -55,6 +55,7 @@ const ApplicantSchema = new Schema<IApplicant>({
   fullName: { type: String, required: true, index: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   phone: { type: String },
+  createdBy: { type: String, index: true },
   location: {
     city: { type: String, default: '' },
     country: { type: String, default: '' },
@@ -99,11 +100,11 @@ const ApplicantSchema = new Schema<IApplicant>({
 ApplicantSchema.index({ 'skills.name': 1 });
 ApplicantSchema.index({ 'location.country': 1 });
 ApplicantSchema.index({ createdAt: -1 });
- 
+
 // Computed field: total years of experience
-ApplicantSchema.virtual('totalExperienceYears').get(function () {
+ApplicantSchema.virtual('totalExperienceYears').get(function (this: any) {
   if (!this.workExperience?.length) return 0;
-  return this.workExperience.reduce((acc, exp) => {
+  return this.workExperience.reduce((acc: number, exp: any) => {
     const start = new Date(exp.startDate);
     const end = exp.isCurrent ? new Date() : (exp.endDate ? new Date(exp.endDate) : new Date());
     return acc + Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365));
@@ -176,12 +177,13 @@ const ScreeningRequestSchema = new Schema<IScreeningRequest>({
   applicantIds: [{ type: String }],
   idempotencyKey: { type: String },
   applicantSetHash: { type: String, index: true },
+  userId: { type: String, index: true },
   status: {
     type: String,
     enum: ['pending', 'processing', 'completed', 'failed'],
     default: 'pending',
   },
-  shortlistSize: { type: Number, enum: [10, 20], default: 10 },
+  shortlistSize: { type: Number, enum: [5, 10, 15, 20], default: 10 },
   completedAt: { type: String },
   errorMessage: { type: String },
 }, {

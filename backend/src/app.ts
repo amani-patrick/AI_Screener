@@ -120,6 +120,7 @@ app.get('/api/me', authenticate, userCtrl.getMe);
 const authRouter = express.Router();
 authRouter.post('/register', authCtrl.register);
 authRouter.post('/login', authCtrl.login);
+authRouter.post('/logout', authenticate, authCtrl.logout);
 authRouter.get('/me', authenticate, authCtrl.getMe);
 app.use('/api/auth', authRouter);
 

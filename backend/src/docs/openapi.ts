@@ -1279,14 +1279,8 @@ export const openapiSpec: OpenAPIV3.Document = {
       UserSettings: {
         type: 'object',
         properties: {
-          notifications: {
-            type: 'object',
-            properties: {
-              emailNewApplicants:  { type: 'boolean', default: true },
-              emailScreeningAlerts:{ type: 'boolean', default: true },
-              emailWeeklySummary:  { type: 'boolean', default: true },
-            },
-          },
+          theme: { type: 'string', enum: ['light', 'dark', 'system'], default: 'system' },
+          language: { type: 'string', default: 'en' },
         },
       },
 
@@ -1302,14 +1296,8 @@ export const openapiSpec: OpenAPIV3.Document = {
       UserSettingsUpdate: {
         type: 'object',
         properties: {
-          notifications: {
-            type: 'object',
-            properties: {
-              emailNewApplicants:   { type: 'boolean' },
-              emailScreeningAlerts: { type: 'boolean' },
-              emailWeeklySummary:   { type: 'boolean' },
-            },
-          },
+          theme:    { type: 'string', enum: ['light', 'dark', 'system'] },
+          language: { type: 'string' },
         },
       },
 

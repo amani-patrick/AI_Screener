@@ -6,19 +6,25 @@ import type { ApiResponse } from '../types';
 export interface DashboardStats {
   submissions: number;
   pending: number;
-  hired: number;
-  declined: number;
+  totalApplicants: number;
+  activeJobs: number;
 }
 
 export async function getDashboardStats(req: Request, res: Response) {
   try {
-    // Count applicants by their application status
+    const userId = (req as any).userId;
+    
+    // Count total applicants
+    const totalApplicants = await Applicant.countDocuments();
+    
+    // Count jobs created by the user
+    const activeJobs = await Job.countDocuments();
+    
+    // Count applicants by their application status (for backwards compatibility)
     const applicants = await Applicant.find({});
     
     let submissions = 0;
     let pending = 0;
-    let hired = 0;
-    let declined = 0;
 
     applicants.forEach((applicant) => {
       if (applicant.applications && applicant.applications.length > 0) {
@@ -29,12 +35,6 @@ export async function getDashboardStats(req: Request, res: Response) {
             case 'under_review':
               pending++;
               break;
-            case 'hired':
-              hired++;
-              break;
-            case 'rejected':
-              declined++;
-              break;
           }
         });
       }
@@ -42,15 +42,15 @@ export async function getDashboardStats(req: Request, res: Response) {
 
     // If no application data, fall back to total applicant count
     if (submissions === 0) {
-      submissions = applicants.length;
-      pending = applicants.length;
+      submissions = totalApplicants;
+      pending = totalApplicants;
     }
 
     const stats: DashboardStats = {
       submissions,
       pending,
-      hired,
-      declined,
+      totalApplicants,
+      activeJobs,
     };
 
     logger.info('[Dashboard] Stats fetched:', stats);
