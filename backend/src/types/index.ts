@@ -4,6 +4,16 @@ export type EmploymentType = 'full-time' | 'part-time' | 'contract' | 'freelance
 export type ScreeningStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type IngestionSource = 'umurava_platform' | 'external_csv' | 'external_pdf' | 'manual';
 
+export type ApplicationStatus = 'new' | 'under_review' | 'shortlisted' | 'rejected' | 'hired';
+
+export interface Application {
+  jobId: string;
+  jobTitle: string;
+  status: ApplicationStatus;
+  appliedAt: string;
+  matchScore?: number;
+}
+
 // Profile schema 
 export interface TalentProfile{
     id: string;
@@ -36,6 +46,7 @@ export interface TalentProfile{
   };
   source: IngestionSource;
   rawResumeText?: string;  // For external applicants parsed from PDF
+  applications?: Application[]; // Track job applications
 }
 
 export interface Skill {
@@ -79,6 +90,8 @@ export interface Language {
   proficiency: 'basic' | 'conversational' | 'professional' | 'native';
 }
 
+export type JobStatus = 'active' | 'draft' | 'closed';
+
 export interface JobPosting {
   id: string;
   title: string;
@@ -101,6 +114,8 @@ export interface JobPosting {
   };
   applicationDeadline?: string;
   shortlistSize: 10 | 20;
+  status: JobStatus;
+  applicantsCount?: number;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -167,6 +182,7 @@ export interface ScreeningResult {
   promptVersion: string;
   createdAt: string;
   fallbackUsed: boolean;
+  usingServerKey?: boolean; // Flag to indicate if server API key was used (for warnings)
 }
 
 // Api Response Type
@@ -187,4 +203,82 @@ export interface PaginatinoQuery {
     pageSize?: number;
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+}
+
+// User / Recruiter Profile
+export interface UserProfile {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: 'admin' | 'manager' | 'recruiter';
+  avatarUrl?: string;
+  company?: string;
+  jobTitle?: string;
+  profileCompletion: number; // 0-100
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserSettings {
+  userId: string;
+  geminiApiKey?: string;
+  notifications: {
+    emailNewApplicants: boolean;
+    emailScreeningAlerts: boolean;
+    emailWeeklySummary: boolean;
+  };
+  updatedAt: string;
+}
+
+// Authentication Types
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  role?: 'admin' | 'manager' | 'recruiter';
+  company?: string;
+  jobTitle?: string;
+}
+
+export interface AuthResponse {
+  user: UserProfile;
+  token: string;
+}
+
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+// Reports / Analytics
+export interface ReportsSummary {
+  totalApplicantsScreened: number;
+  avgMatchAccuracy: number; // percentage
+  efficiencyMultiplier: number; // e.g., 3.2x
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface TimeSeriesData {
+  date: string;
+  value: number;
+}
+
+export interface DetailedAnalytics {
+  summary: ReportsSummary;
+  screeningTrend: TimeSeriesData[];
+  accuracyTrend: TimeSeriesData[];
+  topSkills: { name: string; count: number }[];
+  hiringPipeline: {
+    stage: string;
+    count: number;
+  }[];
 }

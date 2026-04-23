@@ -1,13 +1,12 @@
 import { Request, Response } from 'express';
-import { Applicant, Job, ScreeningRequestModel, ScreeningResultModel } from '../models';
-import { aiScreeningService } from '../services/Aiscreening.service';
+import { Applicant, Job, ScreeningRequestModel, ScreeningResultModel, UserSettingsModel } from '../models';
+import { aiScreeningService, createAIScreeningService } from '../services/Aiscreening.service';
 import { resumeParserService } from '../services/Resumeparser.service';
 import { logger } from '../lib/Logger';
 import type { ApiResponse, TalentProfile } from '../types';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import crypto from 'crypto';
-
 
 // Create a new screening job
 export async function createScreening(req: Request, res: Response) {
@@ -71,7 +70,8 @@ export async function createScreening(req: Request, res: Response) {
     });
 
     // Run screening asynchronously 
-    runScreeningAsync(screeningRequest._id.toString(), job.toObject(), applicants, shortlistSize);
+    const userId = (req.headers['x-user-id'] as string) || 'demo-recruiter';
+    runScreeningAsync(screeningRequest._id.toString(), job.toObject(), applicants, shortlistSize, userId);
 
     return res.status(202).json({
       success: true,
@@ -94,6 +94,7 @@ async function runScreeningAsync(
   job: any,
   applicants: any[],
   shortlistSize: 10 | 20,
+  userId: string = 'demo-recruiter',
 ) {
   try {
     const profiles: TalentProfile[] = applicants.map((a) => ({
@@ -123,7 +124,14 @@ async function runScreeningAsync(
       ...job,
     };
 
-    const result = await aiScreeningService.screenApplicants(jobPosting, profiles, shortlistSize);
+    // Fetch user's API key from settings (BYOK - hybrid approach)
+    const userSettings = await UserSettingsModel.findOne({ userId });
+    const userApiKey = userSettings?.geminiApiKey;
+
+    // Create AI service with user's API key (will fall back to server key if not provided)
+    const aiService = createAIScreeningService(userApiKey);
+
+    const result = await aiService.screenApplicants(jobPosting, profiles, shortlistSize);
 
     // Persist the result
     await ScreeningResultModel.create({

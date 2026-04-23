@@ -3,16 +3,18 @@ import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai'
 import { logger } from '../lib/Logger';
 import { v4 as uuidv4 } from 'uuid';
 
-
 // Convert unstructured PDFs / CSV rows → TalentProfile
 
 export class ResumeParserService {
   private model: GenerativeModel | null = null;
+  private usingServerKey: boolean = false;
 
-  constructor() {
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
+  constructor(userApiKey?: string) {
+    // Prioritize user-provided key, fall back to server environment key
+    const apiKey = (userApiKey || process.env.GEMINI_API_KEY || process.env.GEMININI_API_KEY || '').trim();
+    
     if (!apiKey) {
-      logger.warn('[Parser] GEMINI_API_KEY is not set; PDF resume parsing will return minimal profiles only.');
+      logger.warn('[Parser] GEMINI_API_KEY is not set; PDF resume parsing will return minimal profiles only. Add it to backend/.env or configure in user settings to enable Gemini.');
       return;
     }
 
@@ -25,6 +27,20 @@ export class ResumeParserService {
         responseMimeType: 'application/json',
       },
     });
+
+    // Track if we're using the server key (for warning purposes)
+    this.usingServerKey = !userApiKey && !!process.env.GEMINI_API_KEY;
+    
+    if (this.usingServerKey) {
+      logger.warn('[Parser] Using server-wide Gemini API key for resume parsing. This may have rate limits. Consider adding your own API key in Settings for better performance and reliability.');
+    } else if (userApiKey) {
+      logger.info('[Parser] Using user-provided Gemini API key for resume parsing.');
+    }
+  }
+
+  // Method to check if using server key
+  isUsingServerKey(): boolean {
+    return this.usingServerKey;
   }
 
   // Parse raw resume text → structured TalentProfile 
@@ -201,3 +217,8 @@ ${resumeText.slice(0, 6000)}`;
 }
 
 export const resumeParserService = new ResumeParserService();
+
+// Factory function to create service with user-specific API key
+export function createResumeParserService(userApiKey?: string): ResumeParserService {
+  return new ResumeParserService(userApiKey);
+}

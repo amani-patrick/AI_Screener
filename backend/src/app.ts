@@ -13,6 +13,11 @@ import { openapiSpec } from './docs/openapi';
 import * as jobsCtrl from './controllers/Jobs.controller';
 import * as screeningCtrl from './controllers/Screening.controller';
 import * as applicantsCtrl from './controllers/Applicants.controller';
+import * as reportsCtrl from './controllers/Reports.controller';
+import * as userCtrl from './controllers/User.controller';
+import * as dashboardCtrl from './controllers/Dashboard.controller';
+import * as authCtrl from './controllers/Auth.controller';
+import { authenticate } from './middleware/auth';
 
 const app: express.Express = express();
 
@@ -64,29 +69,59 @@ app.get('/api/docs.json', (_req, res) => {
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec, { explorer: true }));
 
 const jobsRouter = express.Router();
-jobsRouter.get('/', jobsCtrl.listJobs);
-jobsRouter.post('/', jobsCtrl.createJob);
-jobsRouter.get('/stats', jobsCtrl.getDashboardStats);
-jobsRouter.get('/:id', jobsCtrl.getJob);
-jobsRouter.put('/:id', jobsCtrl.updateJob);
-jobsRouter.delete('/:id', jobsCtrl.deleteJob);
+jobsRouter.get('/', authenticate, jobsCtrl.listJobs);
+jobsRouter.post('/', authenticate, jobsCtrl.createJob);
+jobsRouter.get('/stats', authenticate, jobsCtrl.getDashboardStats);
+jobsRouter.get('/:id', authenticate, jobsCtrl.getJob);
+jobsRouter.put('/:id', authenticate, jobsCtrl.updateJob);
+jobsRouter.delete('/:id', authenticate, jobsCtrl.deleteJob);
 app.use('/api/jobs', jobsRouter);
 
 const applicantsRouter = express.Router();
-applicantsRouter.get('/', applicantsCtrl.listApplicants);
-applicantsRouter.post('/', applicantsCtrl.createApplicant);
-applicantsRouter.get('/:id', applicantsCtrl.getApplicant);
-applicantsRouter.put('/:id', applicantsCtrl.updateApplicant);
-applicantsRouter.delete('/:id', applicantsCtrl.deleteApplicant);
+applicantsRouter.get('/', authenticate, applicantsCtrl.listApplicants);
+applicantsRouter.post('/', authenticate, applicantsCtrl.createApplicant);
+applicantsRouter.get('/:id', authenticate, applicantsCtrl.getApplicant);
+applicantsRouter.put('/:id', authenticate, applicantsCtrl.updateApplicant);
+applicantsRouter.delete('/:id', authenticate, applicantsCtrl.deleteApplicant);
 app.use('/api/applicants', applicantsRouter);
 
 const screeningRouter = express.Router();
-screeningRouter.post('/', screeningCtrl.createScreening);
-screeningRouter.get('/', screeningCtrl.listScreenings);
-screeningRouter.get('/metrics/evaluate', screeningCtrl.evaluateScreeningQuality);
-screeningRouter.get('/:id', screeningCtrl.getScreeningResult);
-screeningRouter.post('/upload/csv', upload.single('file'), screeningCtrl.uploadCSVApplicants);
+screeningRouter.post('/', authenticate, screeningCtrl.createScreening);
+screeningRouter.get('/', authenticate, screeningCtrl.listScreenings);
+screeningRouter.get('/metrics/evaluate', authenticate, screeningCtrl.evaluateScreeningQuality);
+screeningRouter.get('/:id', authenticate, screeningCtrl.getScreeningResult);
+screeningRouter.post('/upload/csv', authenticate, upload.single('file'), screeningCtrl.uploadCSVApplicants);
 app.use('/api/screenings', screeningRouter);
+
+// Reports / Analytics routes
+const reportsRouter = express.Router();
+reportsRouter.get('/summary', authenticate, reportsCtrl.getReportsSummary);
+reportsRouter.get('/detailed', authenticate, reportsCtrl.getDetailedAnalytics);
+app.use('/api/reports', reportsRouter);
+
+// User Profile & Settings routes
+const userRouter = express.Router();
+userRouter.get('/profile', authenticate, userCtrl.getUserProfile);
+userRouter.put('/profile', authenticate, userCtrl.updateUserProfile);
+userRouter.get('/settings', authenticate, userCtrl.getUserSettings);
+userRouter.put('/settings', authenticate, userCtrl.updateUserSettings);
+userRouter.put('/api-key', authenticate, userCtrl.updateApiKey);
+app.use('/api/user', userRouter);
+
+// Dashboard routes
+const dashboardRouter = express.Router();
+dashboardRouter.get('/stats', authenticate, dashboardCtrl.getDashboardStats);
+app.use('/api/dashboard', dashboardRouter);
+
+// Quick user info endpoint for dashboard (deprecated, use /api/auth/me)
+app.get('/api/me', authenticate, userCtrl.getMe);
+
+// Authentication routes
+const authRouter = express.Router();
+authRouter.post('/register', authCtrl.register);
+authRouter.post('/login', authCtrl.login);
+authRouter.get('/me', authenticate, authCtrl.getMe);
+app.use('/api/auth', authRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error('Unhandled error:', err);

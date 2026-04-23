@@ -45,11 +45,14 @@ const geminiOutputSchema = z.array(z.object({
 
 export class AIScreeningService {
   private model: GenerativeModel | null = null;
+  private usingServerKey: boolean = false;
 
-  constructor() {
-    const apiKey = (process.env.GEMINI_API_KEY || process.env.GEMININI_API_KEY || '').trim();
+  constructor(userApiKey?: string) {
+    // Prioritize user-provided key, fall back to server environment key
+    const apiKey = (userApiKey || process.env.GEMINI_API_KEY || process.env.GEMININI_API_KEY || '').trim();
+    
     if (!apiKey) {
-      logger.warn('[AI] GEMINI_API_KEY is not set; screening will use placeholder scores. Add it to backend/.env to enable Gemini.');
+      logger.warn('[AI] GEMINI_API_KEY is not set; screening will use placeholder scores. Add it to backend/.env or configure in user settings to enable Gemini.');
       return;
     }
 
@@ -63,6 +66,20 @@ export class AIScreeningService {
         responseMimeType: 'application/json',
       },
     });
+
+    // Track if we're using the server key (for warning purposes)
+    this.usingServerKey = !userApiKey && !!process.env.GEMINI_API_KEY;
+    
+    if (this.usingServerKey) {
+      logger.warn('[AI] Using server-wide Gemini API key. This may have rate limits. Consider adding your own API key in Settings for better performance and reliability.');
+    } else if (userApiKey) {
+      logger.info('[AI] Using user-provided Gemini API key.');
+    }
+  }
+
+  // Method to check if using server key
+  isUsingServerKey(): boolean {
+    return this.usingServerKey;
   }
 
   async screenApplicants(
@@ -144,6 +161,7 @@ export class AIScreeningService {
       promptVersion: PROMPT_VERSION,
       createdAt: new Date().toISOString(),
       fallbackUsed: false,
+      usingServerKey: this.usingServerKey,
     };
   }
 
@@ -589,6 +607,8 @@ function jobLike(applicants: TalentProfile[]): JobPosting {
     requiredSkills: [],
     niceToHaveSkills: [],
     requiredExperienceYears: 1,
+    status: 'active',
+    applicantsCount: applicants.length,
     shortlistSize: 10,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -597,3 +617,8 @@ function jobLike(applicants: TalentProfile[]): JobPosting {
 }
  
 export const aiScreeningService = new AIScreeningService();
+
+// Factory function to create service with user-specific API key
+export function createAIScreeningService(userApiKey?: string): AIScreeningService {
+  return new AIScreeningService(userApiKey);
+}

@@ -1,5 +1,5 @@
 import mongoose , {Schema, Document} from 'mongoose';
-import type { TalentProfile, JobPosting, ScreeningRequest, ScreeningResult } from '../types';
+import type { TalentProfile, JobPosting, ScreeningRequest, ScreeningResult, UserProfile, UserSettings, Application } from '../types';
 
 //Applicant profile
 export interface IApplicant extends Omit<TalentProfile, 'id'>, Document {}
@@ -39,6 +39,18 @@ const CertificationSchema = new Schema({
   credentialUrl: { type: String },
 }, { _id: false });
 
+const ApplicationSchema = new Schema({
+  jobId: { type: String, required: true },
+  jobTitle: { type: String, required: true },
+  status: { 
+    type: String, 
+    enum: ['new', 'under_review', 'shortlisted', 'rejected', 'hired'],
+    default: 'new'
+  },
+  appliedAt: { type: String, default: () => new Date().toISOString() },
+  matchScore: { type: Number },
+}, { _id: false });
+
 const ApplicantSchema = new Schema<IApplicant>({
   fullName: { type: String, required: true, index: true },
   email: { type: String, required: true, unique: true, lowercase: true },
@@ -76,6 +88,7 @@ const ApplicantSchema = new Schema<IApplicant>({
     default: 'umurava_platform',
   },
   rawResumeText: { type: String },
+  applications: [ApplicationSchema],
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -136,6 +149,12 @@ const JobSchema = new Schema<IJob>({
   },
   applicationDeadline: { type: String },
   shortlistSize: { type: Number, enum: [10, 20], default: 10 },
+  status: {
+    type: String,
+    enum: ['active', 'draft', 'closed'],
+    default: 'draft',
+  },
+  applicantsCount: { type: Number, default: 0 },
   createdBy: { type: String, required: true },
 }, {
   timestamps: true,
@@ -227,3 +246,53 @@ const ScreeningResultSchema = new Schema<IScreeningResult>({
 });
 
 export const ScreeningResultModel = mongoose.model<IScreeningResult>('ScreeningResult', ScreeningResultSchema);
+
+// User / Recruiter Profile
+export interface IUser extends Omit<UserProfile, 'id'>, Document {
+  password: string;
+}
+
+const UserSchema = new Schema<IUser>({
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  email: { type: String, required: true, unique: true, lowercase: true },
+  password: { type: String, required: true },
+  role: { type: String, enum: ['admin', 'manager', 'recruiter'], default: 'recruiter' },
+  avatarUrl: { type: String },
+  company: { type: String },
+  jobTitle: { type: String },
+  profileCompletion: { type: Number, default: 0, min: 0, max: 100 },
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
+
+UserSchema.virtual('fullName').get(function (this: any) {
+  return `${this.firstName} ${this.lastName}`;
+});
+
+export const User = mongoose.model<IUser>('User', UserSchema);
+
+// User Settings
+export interface IUserSettings extends Omit<UserSettings, 'userId'>, Document {
+  userId: string;
+}
+
+const NotificationSettingsSchema = new Schema({
+  emailNewApplicants: { type: Boolean, default: true },
+  emailScreeningAlerts: { type: Boolean, default: true },
+  emailWeeklySummary: { type: Boolean, default: true },
+}, { _id: false });
+
+const UserSettingsSchema = new Schema<IUserSettings>({
+  userId: { type: String, required: true, unique: true, index: true },
+  geminiApiKey: { type: String },
+  notifications: { type: NotificationSettingsSchema, default: () => ({}) },
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
+});
+
+export const UserSettingsModel = mongoose.model<IUserSettings>('UserSettings', UserSettingsSchema);

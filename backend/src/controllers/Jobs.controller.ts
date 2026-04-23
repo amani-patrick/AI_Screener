@@ -9,8 +9,24 @@ import type { ApiResponse } from '../types';
 
 export async function createJob(req: Request, res: Response) {
   try {
+    const { requirements, skills, ...rest } = req.body;
+
+    // Transform frontend form data to backend structure
+    const responsibilities = requirements ? requirements.split('\n').filter((r: string) => r.trim()) : [];
+    
+    const requiredSkills = skills
+      ? skills.split(',').map((skill: string) => ({
+          name: skill.trim(),
+          yearsRequired: 0,
+          mandatory: true,
+          weight: 3,
+        }))
+      : [];
+
     const job = await Job.create({
-      ...req.body,
+      ...rest,
+      responsibilities,
+      requiredSkills,
       createdBy: req.headers['x-user-id'] || 'demo-recruiter',
     });
 
