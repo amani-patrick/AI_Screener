@@ -23,10 +23,14 @@ export const openapiSpec: OpenAPIV3.Document = {
     { url: 'http://localhost:3001', description: 'Local dev' },
   ],
   tags: [
-    { name: 'Health',      description: 'Service liveness' },
-    { name: 'Jobs',        description: 'Job posting management' },
-    { name: 'Applicants',  description: 'Candidate profile management' },
-    { name: 'Screenings',  description: 'AI-powered screening pipeline' },
+    { name: 'Health',         description: 'Service liveness' },
+    { name: 'Authentication', description: 'User registration and login' },
+    { name: 'Jobs',           description: 'Job posting management' },
+    { name: 'Applicants',     description: 'Candidate profile management' },
+    { name: 'Screenings',     description: 'AI-powered screening pipeline' },
+    { name: 'User',           description: 'User profile and settings' },
+    { name: 'Dashboard',      description: 'Dashboard statistics and metrics' },
+    { name: 'Reports',        description: 'Analytics and reporting' },
   ],
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -348,6 +352,186 @@ export const openapiSpec: OpenAPIV3.Document = {
           '200': { description: 'Screening quality metrics', content: { 'application/json': { schema: { $ref: '#/components/schemas/ScreeningMetricsResponse' } } } },
           '400': { description: 'Missing screeningRequestId', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
           '404': { description: 'Screening result not found', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    '/api/screenings/shortlists': {
+      get: {
+        tags: ['Screenings'],
+        operationId: 'getScreeningShortlists',
+        summary: 'Get all screening shortlists',
+        description: 'Returns all completed screening shortlists with candidate details for each job.',
+        responses: {
+          '200': { description: 'List of shortlists', content: { 'application/json': { schema: { $ref: '#/components/schemas/ShortlistsResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    // ── Authentication ─────────────────────────────────────────────────────────
+    '/api/auth/register': {
+      post: {
+        tags: ['Authentication'],
+        operationId: 'register',
+        summary: 'Register new user',
+        description: 'Creates a new recruiter account and returns auth token.',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/RegisterRequest' } } },
+        },
+        responses: {
+          '201': { description: 'User registered successfully', content: { 'application/json': { schema: { $ref: '#/components/schemas/AuthResponse' } } } },
+          '409': { description: 'Email already exists', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    '/api/auth/login': {
+      post: {
+        tags: ['Authentication'],
+        operationId: 'login',
+        summary: 'User login',
+        description: 'Authenticates user and returns JWT token.',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/LoginRequest' } } },
+        },
+        responses: {
+          '200': { description: 'Login successful', content: { 'application/json': { schema: { $ref: '#/components/schemas/AuthResponse' } } } },
+          '401': { description: 'Invalid credentials', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    '/api/auth/me': {
+      get: {
+        tags: ['Authentication'],
+        operationId: 'getCurrentUser',
+        summary: 'Get current user',
+        description: 'Returns the currently authenticated user profile.',
+        responses: {
+          '200': { description: 'Current user data', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    // ── User Profile & Settings ────────────────────────────────────────────────
+    '/api/user/profile': {
+      get: {
+        tags: ['User'],
+        operationId: 'getUserProfile',
+        summary: 'Get user profile',
+        responses: {
+          '200': { description: 'User profile', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+      put: {
+        tags: ['User'],
+        operationId: 'updateUserProfile',
+        summary: 'Update user profile',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/UserUpdate' } } },
+        },
+        responses: {
+          '200': { description: 'Profile updated', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    '/api/user/settings': {
+      get: {
+        tags: ['User'],
+        operationId: 'getUserSettings',
+        summary: 'Get user settings',
+        responses: {
+          '200': { description: 'User settings', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserSettingsResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+      put: {
+        tags: ['User'],
+        operationId: 'updateUserSettings',
+        summary: 'Update user settings',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/UserSettingsUpdate' } } },
+        },
+        responses: {
+          '200': { description: 'Settings updated', content: { 'application/json': { schema: { $ref: '#/components/schemas/UserSettingsResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    '/api/user/api-key': {
+      put: {
+        tags: ['User'],
+        operationId: 'updateApiKey',
+        summary: 'Update Gemini API key',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiKeyUpdate' } } },
+        },
+        responses: {
+          '200': { description: 'API key updated', content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessMessage' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    // ── Dashboard ─────────────────────────────────────────────────────────────
+    '/api/dashboard/stats': {
+      get: {
+        tags: ['Dashboard'],
+        operationId: 'getDashboardStats',
+        summary: 'Get dashboard statistics',
+        description: 'Returns dashboard stats including submissions, pending, hired, and declined counts.',
+        responses: {
+          '200': { description: 'Dashboard stats', content: { 'application/json': { schema: { $ref: '#/components/schemas/DashboardStatsResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    // ── Reports ─────────────────────────────────────────────────────────────────
+    '/api/reports/summary': {
+      get: {
+        tags: ['Reports'],
+        operationId: 'getReportsSummary',
+        summary: 'Get reports summary',
+        description: 'Returns summary statistics for reports including total screened, accuracy, and efficiency.',
+        responses: {
+          '200': { description: 'Reports summary', content: { 'application/json': { schema: { $ref: '#/components/schemas/ReportsSummaryResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+          '500': { $ref: '#/components/responses/InternalError' },
+        },
+      },
+    },
+
+    '/api/reports/detailed': {
+      get: {
+        tags: ['Reports'],
+        operationId: 'getDetailedReports',
+        summary: 'Get detailed analytics',
+        description: 'Returns detailed analytics and breakdowns.',
+        responses: {
+          '200': { description: 'Detailed analytics', content: { 'application/json': { schema: { $ref: '#/components/schemas/DetailedAnalyticsResponse' } } } },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
           '500': { $ref: '#/components/responses/InternalError' },
         },
       },
@@ -993,6 +1177,248 @@ export const openapiSpec: OpenAPIV3.Document = {
               },
             },
           },
+        },
+      },
+
+      // ── Authentication Schemas ──────────────────────────────────────────────────
+      RegisterRequest: {
+        type: 'object',
+        required: ['firstName', 'lastName', 'email', 'password'],
+        properties: {
+          firstName: { type: 'string', example: 'John' },
+          lastName:  { type: 'string', example: 'Doe' },
+          email:     { type: 'string', format: 'email', example: 'john@example.com' },
+          password:  { type: 'string', format: 'password', example: 'SecurePass123!', minLength: 8 },
+          role:      { type: 'string', enum: ['recruiter', 'admin', 'manager'], default: 'recruiter' },
+          company:   { type: 'string', example: 'Acme Corp' },
+          jobTitle:  { type: 'string', example: 'HR Manager' },
+        },
+      },
+
+      LoginRequest: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email:    { type: 'string', format: 'email', example: 'john@example.com' },
+          password: { type: 'string', format: 'password', example: 'SecurePass123!' },
+        },
+      },
+
+      AuthResponse: {
+        type: 'object',
+        required: ['success'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string', example: 'Login successful' },
+          data: {
+            type: 'object',
+            required: ['user', 'token'],
+            properties: {
+              user: {
+                type: 'object',
+                required: ['id', 'email', 'firstName', 'lastName', 'role'],
+                properties: {
+                  id:        { type: 'string', example: '663f2a1b4e0c3d2a1b4e0c3d' },
+                  email:     { type: 'string', example: 'john@example.com' },
+                  firstName: { type: 'string', example: 'John' },
+                  lastName:  { type: 'string', example: 'Doe' },
+                  role:      { type: 'string', enum: ['admin', 'manager', 'recruiter'] },
+                  avatarUrl: { type: 'string', nullable: true },
+                  company:   { type: 'string', nullable: true },
+                  jobTitle:  { type: 'string', nullable: true },
+                  profileCompletion: { type: 'number', example: 85 },
+                },
+              },
+              token: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+            },
+          },
+        },
+      },
+
+      // ── User Schemas ──────────────────────────────────────────────────────────
+      User: {
+        type: 'object',
+        required: ['id', 'email', 'firstName', 'lastName', 'role'],
+        properties: {
+          id:                { type: 'string' },
+          email:             { type: 'string' },
+          firstName:         { type: 'string' },
+          lastName:          { type: 'string' },
+          role:              { type: 'string', enum: ['admin', 'manager', 'recruiter'] },
+          avatarUrl:         { type: 'string', nullable: true },
+          company:           { type: 'string', nullable: true },
+          jobTitle:          { type: 'string', nullable: true },
+          profileCompletion: { type: 'number' },
+          geminiApiKey:      { type: 'string', nullable: true },
+          settings:          { $ref: '#/components/schemas/UserSettings' },
+        },
+      },
+
+      UserResponse: {
+        type: 'object',
+        required: ['success'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          data:    { $ref: '#/components/schemas/User' },
+        },
+      },
+
+      UserUpdate: {
+        type: 'object',
+        description: 'Partial user update - include only fields to change',
+        properties: {
+          firstName:  { type: 'string' },
+          lastName:   { type: 'string' },
+          email:      { type: 'string', format: 'email' },
+          company:    { type: 'string' },
+          jobTitle:   { type: 'string' },
+          avatarUrl:  { type: 'string' },
+        },
+      },
+
+      UserSettings: {
+        type: 'object',
+        properties: {
+          notifications: {
+            type: 'object',
+            properties: {
+              emailNewApplicants:  { type: 'boolean', default: true },
+              emailScreeningAlerts:{ type: 'boolean', default: true },
+              emailWeeklySummary:  { type: 'boolean', default: true },
+            },
+          },
+        },
+      },
+
+      UserSettingsResponse: {
+        type: 'object',
+        required: ['success'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          data:    { $ref: '#/components/schemas/UserSettings' },
+        },
+      },
+
+      UserSettingsUpdate: {
+        type: 'object',
+        properties: {
+          notifications: {
+            type: 'object',
+            properties: {
+              emailNewApplicants:   { type: 'boolean' },
+              emailScreeningAlerts: { type: 'boolean' },
+              emailWeeklySummary:   { type: 'boolean' },
+            },
+          },
+        },
+      },
+
+      ApiKeyUpdate: {
+        type: 'object',
+        required: ['apiKey'],
+        properties: {
+          apiKey: { type: 'string', description: 'Gemini API key for AI screening' },
+        },
+      },
+
+      // ── Dashboard Schema ───────────────────────────────────────────────────────
+      DashboardStats: {
+        type: 'object',
+        properties: {
+          submissions: { type: 'integer', example: 122 },
+          pending:     { type: 'integer', example: 45 },
+          hired:       { type: 'integer', example: 67 },
+          declined:    { type: 'integer', example: 10 },
+        },
+      },
+
+      // ── Reports Schemas ────────────────────────────────────────────────────────
+      ReportsSummary: {
+        type: 'object',
+        properties: {
+          totalScreened:       { type: 'integer', example: 122 },
+          avgAccuracy:         { type: 'number', example: 87 },
+          efficiencyMultiplier:{ type: 'number', example: 3.2 },
+        },
+      },
+
+      ReportsSummaryResponse: {
+        type: 'object',
+        required: ['success'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          data:    { $ref: '#/components/schemas/ReportsSummary' },
+        },
+      },
+
+      DetailedAnalytics: {
+        type: 'object',
+        properties: {
+          screeningPerformance: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                jobId:      { type: 'string' },
+                jobTitle:   { type: 'string' },
+                applicants: { type: 'integer' },
+                shortlisted:{ type: 'integer' },
+                avgScore:   { type: 'number' },
+              },
+            },
+          },
+          skillDistribution: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                skill:  { type: 'string' },
+                count:  { type: 'integer' },
+              },
+            },
+          },
+        },
+      },
+
+      DetailedAnalyticsResponse: {
+        type: 'object',
+        required: ['success'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          data:    { $ref: '#/components/schemas/DetailedAnalytics' },
+        },
+      },
+
+      // ── Shortlists Schema ──────────────────────────────────────────────────────
+      ShortlistCandidate: {
+        type: 'object',
+        properties: {
+          name:        { type: 'string', example: 'Alice Johnson' },
+          role:        { type: 'string', example: 'Senior Developer' },
+          score:       { type: 'number', example: 92 },
+          description: { type: 'string', example: 'Strong match with required skills' },
+        },
+      },
+
+      Shortlist: {
+        type: 'object',
+        properties: {
+          id:         { type: 'string' },
+          jobTitle:   { type: 'string', example: 'Senior Backend Engineer' },
+          date:       { type: 'string', format: 'date', example: '2024-01-15' },
+          candidates: { type: 'integer', example: 10 },
+          topScore:   { type: 'number', example: 95 },
+          status:     { type: 'string', enum: ['Complete', 'Pending Review'] },
+          list:       { type: 'array', items: { $ref: '#/components/schemas/ShortlistCandidate' } },
+        },
+      },
+
+      ShortlistsResponse: {
+        type: 'object',
+        required: ['success'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          data:    { type: 'array', items: { $ref: '#/components/schemas/Shortlist' } },
         },
       },
     },
