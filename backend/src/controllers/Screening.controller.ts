@@ -146,7 +146,7 @@ async function runScreeningAsync(
       ...result,
     });
 
-    // Mark request as completed
+    // Update request with completed status
     await ScreeningRequestModel.findByIdAndUpdate(screeningRequestId, {
       status: 'completed',
       completedAt: new Date().toISOString(),
@@ -155,9 +155,16 @@ async function runScreeningAsync(
     logger.info(`[Screening] Request ${screeningRequestId} completed successfully`);
   } catch (err) {
     logger.error(`[Screening] Request ${screeningRequestId} failed:`, err);
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    
+    // Update request with failed status and error details
     await ScreeningRequestModel.findByIdAndUpdate(screeningRequestId, {
       status: 'failed',
-      errorMessage: err instanceof Error ? err.message : 'Unknown error',
+      errorMessage,
+      errorDetails: {
+        fallbackUsed: true,
+        errorType: err instanceof Error ? err.constructor.name : 'Unknown',
+      },
     });
   }
 }

@@ -359,13 +359,24 @@ ${rawSection}
       // Strip any accidental markdown fences
       let clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
+      // Try to extract JSON array from the text if it's embedded
+      const arrayMatch = clean.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        clean = arrayMatch[0];
+      }
+
       // Normalize JSON: fix unquoted property names, single quotes, trailing commas
       clean = this.normalizeJson(clean);
+
+      // Additional normalization for common Gemini issues
+      clean = clean.replace(/,\s*}/g, '}');  // Remove trailing commas in objects
+      clean = clean.replace(/,\s*\]/g, ']');  // Remove trailing commas in arrays
 
       const parsed = JSON.parse(clean) as unknown;
       const validated = geminiOutputSchema.safeParse(parsed);
       if (!validated.success) {
         logger.warn('[AI] Invalid Gemini JSON shape, using fallback', validated.error.flatten());
+        logger.debug('[AI] Cleaned response:', clean.slice(0, 1000));
         return applicants.map((a) => this.fallbackFromRuleBased(jobLike(applicants), a, 'Invalid Gemini JSON shape'));
       }
  
@@ -381,7 +392,7 @@ ${rawSection}
       });
     } catch (err) {
       logger.error('[AI] Failed to parse Gemini JSON response:', err);
-      logger.debug('[AI] Raw response:', text.slice(0, 500));
+      logger.debug('[AI] Raw response (first 1000 chars):', text.slice(0, 1000));
       // Return zero-scored fallbacks for all applicants in this batch
       return applicants.map((a) => this.zeroScoreFallback(a.id));
     }
