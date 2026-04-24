@@ -92,6 +92,7 @@ export class AIScreeningService {
     if (!this.model) {
       const processingTimeMs = Date.now() - startTime;
       logger.warn(`[AI] Skipping Gemini for job "${job.title}" — no API key configured`);
+      logger.warn('[AI] Please set GEMINI_API_KEY in backend/.env or configure in user settings to enable AI-powered screening.');
       const shortlist = applicants
         .map((a) => this.ruleBasedScore(job, a, true))
         .sort((a, b) => b.overallScore - a.overallScore)
@@ -109,15 +110,18 @@ export class AIScreeningService {
       };
     }
 
-    logger.info(`[AI] Starting screening for job "${job.title}" with ${applicants.length} applicants`);
+    logger.info(`[AI] Starting screening for job "${job.title}" with ${applicants.length} applicants using ${MODEL_NAME}`);
+    logger.info(`[AI] Shortlist size: ${shortlistSize}, Batch size: 15, Total batches: ${Math.ceil(applicants.length / 15)}`);
+    
     const BATCH_SIZE = 15;
     const batches = this.chunk(applicants, BATCH_SIZE);
     const allScores: GeminiCandidateOutput[] = [];
 
     for (let i = 0; i < batches.length; i++) {
-      logger.info(`[AI] Processing batch ${i + 1}/${batches.length}`);
+      logger.info(`[AI] Processing batch ${i + 1}/${batches.length} (${batches[i].length} applicants)`);
       const batchScores = await this.evaluateBatch(job, batches[i]);
       allScores.push(...batchScores);
+      logger.info(`[AI] Completed batch ${i + 1}/${batches.length}, total scores so far: ${allScores.length}`);
     }
 
     // Compute final weighted scores and rank
@@ -171,32 +175,61 @@ private async evaluateBatch(
     applicants: TalentProfile[],
   ): Promise<GeminiCandidateOutput[]> {
     if (!this.model) {
+      logger.warn('[AI] No AI model available, using zero-score fallback');
       return applicants.map((a) => this.zeroScoreFallback(a.id));
     }
+    
     const prompt = this.buildScoringPrompt(job, applicants);
+    logger.info(`[AI] Generated prompt for ${applicants.length} applicants, prompt length: ${prompt.length} chars`);
+    
     let lastErr: unknown;
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    const maxRetries = 5;
+    const baseDelay = 500; // 500ms base delay
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        logger.info(`[AI] Attempt ${attempt}/${maxRetries} to generate content for ${applicants.length} applicants`);
         const result = await this.model.generateContent(prompt);
         const text = result.response.text();
-        return this.parseGeminiResponse(text, applicants);
+        logger.info(`[AI] Received response from Gemini, response length: ${text.length} chars`);
+        const parsed = this.parseGeminiResponse(text, applicants);
+        logger.info(`[AI] Successfully parsed ${parsed.length} candidate scores from batch`);
+        return parsed;
       } catch (err) {
         lastErr = err;
-        // Check if it's a quota exceeded error
         const errorMessage = err instanceof Error ? err.message : String(err);
-        if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
-          logger.warn('[AI] Quota exceeded detected, falling back immediately');
-          return applicants.map((a) => this.fallbackFromRuleBased(jobLike(applicants), a, 'Quota exceeded'));
+        
+        // Check if it's a quota exceeded error - fall back immediately
+        if (errorMessage.includes('quota') || errorMessage.includes('limit') || errorMessage.includes('429')) {
+          logger.warn('[AI] Quota exceeded detected (429), falling back to rule-based scoring immediately');
+          logger.error('[AI] Quota error details:', errorMessage);
+          return applicants.map((a) => this.fallbackFromRuleBased(jobLike(applicants), a, 'API quota exceeded - AI evaluation failed'));
         }
-        logger.warn(`[AI] Gemini attempt ${attempt}/5 failed`, err);
-        await this.sleep(attempt * 500); // Increase delay
+        
+        // Check if it's an authentication error
+        if (errorMessage.includes('auth') || errorMessage.includes('401') || errorMessage.includes('403')) {
+          logger.error('[AI] Authentication error with Gemini API:', errorMessage);
+          return applicants.map((a) => this.fallbackFromRuleBased(jobLike(applicants), a, 'API authentication failed - AI evaluation failed'));
+        }
+        
+        // Check if it's a timeout or network error
+        if (errorMessage.includes('timeout') || errorMessage.includes('network') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('ECONNRESET')) {
+          logger.warn('[AI] Network/timeout error, falling back to rule-based scoring');
+          return applicants.map((a) => this.fallbackFromRuleBased(jobLike(applicants), a, 'Network timeout - AI evaluation failed'));
+        }
+        
+        // For other errors, retry with exponential backoff
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        logger.warn(`[AI] Gemini attempt ${attempt}/${maxRetries} failed: ${errorMessage}. Retrying in ${delay}ms...`);
+        await this.sleep(delay);
       }
     }
-    logger.error('[AI] Gemini API exhausted retries during batch evaluation:', lastErr);
-    return applicants.map((a) => this.fallbackFromRuleBased(job, a, 'Gemini retry exhaustion'));
+    
+    // All retries exhausted
+    logger.error('[AI] Gemini API exhausted all retries during batch evaluation:', lastErr);
+    logger.error('[AI] Last error details:', lastErr instanceof Error ? lastErr.message : String(lastErr));
+    return applicants.map((a) => this.fallbackFromRuleBased(job, a, 'Gemini API retries exhausted - AI evaluation failed'));
   }
-
-
 
   private buildScoringPrompt(job: JobPosting, applicants: TalentProfile[]): string {
     const jobContext = this.formatJobContext(job);

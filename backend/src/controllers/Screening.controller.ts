@@ -1,11 +1,12 @@
 import { Request, Response } from 'express';
 import { Applicant, Job, ScreeningRequestModel, ScreeningResultModel, UserSettingsModel } from '../models';
 import { aiScreeningService, createAIScreeningService } from '../services/Aiscreening.service';
-import { resumeParserService } from '../services/Resumeparser.service';
+import { resumeParserService, createResumeParserService } from '../services/Resumeparser.service';
 import { logger } from '../lib/Logger';
 import type { ApiResponse, TalentProfile } from '../types';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
+import pdfparse from 'pdf-parse';
 import crypto from 'crypto';
 
 // Create a new screening job
@@ -77,6 +78,55 @@ export async function createScreening(req: Request, res: Response) {
       $inc: { applicantsCount: applicants.length }
     });
 
+    // Fetch user's API key from settings (BYOK - hybrid approach)
+    const userSettings = await UserSettingsModel.findOne({ userId });
+    const userApiKey = userSettings?.geminiApiKey;
+
+    // Check if using server key BEFORE starting screening
+    const hasApiKey = !!(userApiKey || process.env.GEMINI_API_KEY);
+    const usingServerKey = !userApiKey && !!process.env.GEMINI_API_KEY;
+
+    // If no API key at all, reject immediately
+    if (!hasApiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key required',
+        data: {
+          requiresApiKey: true,
+          message: 'AI screening requires a Gemini API key. Please add your API key in Settings to enable AI-powered screening.',
+        },
+      } satisfies ApiResponse);
+    }
+
+    // If using server fallback key, require explicit confirmation
+    if (usingServerKey) {
+      const confirmFallback = req.body.confirmFallback === true;
+      if (!confirmFallback) {
+        return res.status(409).json({
+          success: false,
+          error: 'Fallback API key confirmation required',
+          data: {
+            requiresFallbackConfirmation: true,
+            message: 'You are about to use the default fallback API key for AI screening. This may have rate limits. Please confirm to proceed or add your own API key in Settings.',
+          },
+        } satisfies ApiResponse);
+      }
+      logger.warn('[Screening] User confirmed usage of fallback API key');
+    }
+
+    // Create AI service to check initialization
+    const aiService = createAIScreeningService(userApiKey);
+
+    // Log screening start with detailed information
+    logger.info(`[Screening] Starting screening for job "${job.title}" with ${applicants.length} candidates`, {
+      jobId: job._id.toString(),
+      userId,
+      applicantCount: applicants.length,
+      shortlistSize,
+      hasApiKey,
+      usingServerKey,
+    });
+
     // Run screening asynchronously 
     runScreeningAsync(screeningRequest._id.toString(), job.toObject(), applicants, shortlistSize, userId);
 
@@ -87,6 +137,9 @@ export async function createScreening(req: Request, res: Response) {
         status: 'processing',
         applicantsCount: applicants.length,
         message: `Screening ${applicants.length} candidates for "${job.title}"`,
+        fallbackUsed: usingServerKey,
+        hasApiKey,
+        aiServiceReady: true,
       },
     } satisfies ApiResponse);
   } catch (err) {
@@ -222,28 +275,61 @@ export async function getScreeningResult(req: Request, res: Response) {
   }
 }
 
-// ------ Upload CSV applicants ------
+// ------ Upload applicants (CSV/Excel/PDF) ------
 export async function uploadCSVApplicants(req: Request, res: Response) {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded' } satisfies ApiResponse);
     }
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]) as Record<string, string>[];
-
-    const rowErrors: Array<{ row: number; error: string }> = [];
-    const profiles = rows.flatMap((row, idx) => {
-      const validation = validateCSVRow(row);
-      if (!validation.valid) {
-        rowErrors.push({ row: idx + 2, error: validation.error });
-        return [];
-      }
-      return [resumeParserService.parseCSVRow(normalizeCSVRow(row))];
-    });
-
     const userId = req.userId || 'demo-recruiter';
+    const userSettings = await UserSettingsModel.findOne({ userId });
+    const userApiKey = userSettings?.geminiApiKey;
+    const parserService = createResumeParserService(userApiKey);
+
+    let profiles: TalentProfile[] = [];
+    let totalRows = 0;
+    const rowErrors: Array<{ row: number; error: string }> = [];
+
+    // Check if file is PDF
+    if (req.file.mimetype === 'application/pdf' || req.file.originalname?.toLowerCase().endsWith('.pdf')) {
+      // Handle PDF parsing
+      try {
+        const pdfData = await pdfparse(req.file.buffer);
+        const pdfText = pdfData.text;
+        
+        logger.info(`[Upload] Parsing PDF with ${pdfData.numpages} pages, ${pdfText.length} characters`);
+        
+        // Parse the PDF text using the resume parser service
+        const profile = await parserService.parseResumeText(pdfText);
+        profiles.push(profile);
+        totalRows = 1;
+        
+        logger.info(`[Upload] Successfully parsed PDF profile: ${profile.fullName}`);
+      } catch (pdfError) {
+        logger.error('[Upload] PDF parsing error:', pdfError);
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Failed to parse PDF file. Please ensure it contains readable text.' 
+        } satisfies ApiResponse);
+      }
+    } else {
+      // Handle CSV/Excel parsing
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]) as Record<string, string>[];
+      totalRows = rows.length;
+
+      profiles = rows.flatMap((row, idx) => {
+        const validation = validateCSVRow(row);
+        if (!validation.valid) {
+          rowErrors.push({ row: idx + 2, error: validation.error });
+          return [];
+        }
+        return [resumeParserService.parseCSVRow(normalizeCSVRow(row))];
+      });
+    }
+
     const inserted: any[] = [];
     for (const profile of profiles) {
       try {
@@ -261,15 +347,16 @@ export async function uploadCSVApplicants(req: Request, res: Response) {
     return res.json({
       success: true,
       data: {
-        totalRows: rows.length,
+        totalRows,
         importedCount: inserted.length,
         applicantIds: inserted.map((a) => a._id.toString()),
         rowErrors,
+        fallbackUsed: parserService.isUsingServerKey(),
       },
     } satisfies ApiResponse);
   } catch (err) {
-    logger.error('[Upload] CSV upload error:', err);
-    return res.status(500).json({ success: false, error: 'Failed to process CSV' } satisfies ApiResponse);
+    logger.error('[Upload] File upload error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to process file' } satisfies ApiResponse);
   }
 }
 
