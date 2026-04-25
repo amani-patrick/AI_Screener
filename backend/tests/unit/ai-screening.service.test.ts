@@ -83,4 +83,18 @@ describe('AIScreeningService', () => {
     expect(result.shortlist[0].finalDecisionNote).toContain('Final hiring decision');
     expect(result.shortlist[0].needsHumanReview).toBe(true);
   });
+
+  it('should handle single applicant screening without errors', async () => {
+    const service = new AIScreeningService();
+    const singleApplicant: TalentProfile[] = [sampleApplicants[0]];
+    
+    const result = await service.screenApplicants(sampleJob, singleApplicant, 10);
+
+    expect(result.jobId).toBe(sampleJob.id);
+    expect(result.totalApplicantsEvaluated).toBe(1);
+    expect(result.shortlist).toHaveLength(1);
+    expect(result.shortlist[0].rank).toBe(1);
+    expect(result.shortlist[0].applicantId).toBe('app-1');
+    expect(['yes', 'maybe', 'no']).toContain(result.shortlist[0].recommendation);
+  });
 });

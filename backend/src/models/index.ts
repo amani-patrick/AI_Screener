@@ -170,7 +170,12 @@ JobSchema.index({ experienceLevel: 1 });
 export const Job = mongoose.model<IJob>('Job', JobSchema);
 
 // Screening Req
-export interface IScreeningRequest extends Omit<ScreeningRequest, 'id'>, Document {}
+export interface IScreeningRequest extends Omit<ScreeningRequest, 'id'>, Document {
+  currentBatch?: number;
+  totalBatches?: number;
+  progressPercentage?: number;
+  currentStep?: string;
+}
 
 const ScreeningRequestSchema = new Schema<IScreeningRequest>({
   jobId: { type: String, required: true, index: true },
@@ -186,6 +191,11 @@ const ScreeningRequestSchema = new Schema<IScreeningRequest>({
   shortlistSize: { type: Number, enum: [5, 10, 15, 20], default: 10 },
   completedAt: { type: String },
   errorMessage: { type: String },
+  // Progress tracking
+  currentBatch: { type: Number, default: 0 },
+  totalBatches: { type: Number, default: 0 },
+  progressPercentage: { type: Number, default: 0, min: 0, max: 100 },
+  currentStep: { type: String, default: '' },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

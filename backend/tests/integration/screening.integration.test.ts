@@ -77,4 +77,40 @@ describe('Integration: screenings routes', () => {
     }));
     expect(response.body.data.transparentContract.fallbackUsed).toBe(false);
   });
+
+  it('should create screening request for single applicant', async () => {
+    (mockedJob.findById as jest.Mock).mockResolvedValue({
+      _id: { toString: () => 'job-1' },
+      title: 'Backend Engineer',
+      toObject: () => ({ title: 'Backend Engineer' }),
+    });
+    (mockedApplicant.find as jest.Mock).mockResolvedValue([{ 
+      _id: { toString: () => 'app-1' },
+      fullName: 'Single Applicant',
+    }]);
+    (mockedRequest.findOne as jest.Mock).mockResolvedValue(null);
+    (mockedRequest.create as jest.Mock).mockResolvedValue({
+      _id: { toString: () => 'new-req' },
+      status: 'processing',
+      applicantIds: ['app-1'],
+    });
+    (mockedRequest.findByIdAndUpdate as jest.Mock).mockResolvedValue({});
+
+    const response = await request(app)
+      .post('/api/screenings')
+      .send({ jobId: 'job-1', applicantIds: ['app-1'], shortlistSize: 10 });
+
+    expect(response.status).toBe(202);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.screeningRequestId).toBe('new-req');
+    expect(mockedRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicantIds: ['app-1'],
+        totalBatches: expect.any(Number),
+        currentBatch: 0,
+        progressPercentage: 0,
+        currentStep: expect.any(String),
+      })
+    );
+  });
 });

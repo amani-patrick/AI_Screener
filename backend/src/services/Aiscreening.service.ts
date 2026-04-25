@@ -86,6 +86,7 @@ export class AIScreeningService {
     job: JobPosting,
     applicants: TalentProfile[],
     shortlistSize: number,
+    progressCallback?: (currentBatch: number, totalBatches: number, step: string) => Promise<void>,
   ): Promise<Omit<ScreeningResult, 'id' | 'screeningRequestId'>> {
     const startTime = Date.now();
 
@@ -111,14 +112,17 @@ export class AIScreeningService {
     }
 
     logger.info(`[AI] Starting screening for job "${job.title}" with ${applicants.length} applicants using ${MODEL_NAME}`);
-    logger.info(`[AI] Shortlist size: ${shortlistSize}, Batch size: 15, Total batches: ${Math.ceil(applicants.length / 15)}`);
+    logger.info(`[AI] Shortlist size: ${shortlistSize}, Batch size: 5, Total batches: ${Math.ceil(applicants.length / 5)}`);
     
-    const BATCH_SIZE = 15;
+    const BATCH_SIZE = 5;
     const batches = this.chunk(applicants, BATCH_SIZE);
     const allScores: GeminiCandidateOutput[] = [];
 
     for (let i = 0; i < batches.length; i++) {
       logger.info(`[AI] Processing batch ${i + 1}/${batches.length} (${batches[i].length} applicants)`);
+      if (progressCallback) {
+        await progressCallback(i + 1, batches.length, `Processing batch ${i + 1}/${batches.length}...`);
+      }
       const batchScores = await this.evaluateBatch(job, batches[i]);
       allScores.push(...batchScores);
       logger.info(`[AI] Completed batch ${i + 1}/${batches.length}, total scores so far: ${allScores.length}`);
@@ -189,7 +193,10 @@ private async evaluateBatch(
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         logger.info(`[AI] Attempt ${attempt}/${maxRetries} to generate content for ${applicants.length} applicants`);
-        const result = await this.model.generateContent(prompt);
+        const result = await Promise.race([
+          this.model.generateContent(prompt),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 30000))
+        ]) as any;
         const text = result.response.text();
         logger.info(`[AI] Received response from Gemini, response length: ${text.length} chars`);
         const parsed = this.parseGeminiResponse(text, applicants);
@@ -357,9 +364,9 @@ ${niceToHave || '  • None listed'}
       .map((c) => `  • ${c.name} by ${c.issuer}`)
       .join('\n');
  
-    // Include raw resume text for external applicants (parsed from PDF/CSV)
+    // Include raw resume text for external applicants (parsed from PDF/CSV) - truncated for speed
     const rawSection = applicant.rawResumeText
-      ? `\n**Additional Resume Context:**\n${applicant.rawResumeText.slice(0, 1500)}...`
+      ? `\n**Additional Resume Context:**\n${applicant.rawResumeText.slice(0, 500)}...`
       : '';
   
       return `

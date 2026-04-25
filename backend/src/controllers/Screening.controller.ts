@@ -37,6 +37,7 @@ export async function createScreening(req: Request, res: Response) {
     if (idempotencyKey) {
       const existingByKey = await ScreeningRequestModel.findOne({ idempotencyKey });
       if (existingByKey) {
+        logger.info(`[Screening] Reusing existing screening request ${existingByKey._id} by idempotency key`);
         return res.status(200).json({
           success: true,
           data: {
@@ -54,10 +55,10 @@ export async function createScreening(req: Request, res: Response) {
       applicantSetHash,
       status: { $in: ['pending', 'processing'] },
     });
-    // Check if the existing screening is stale (older than 30 minutes)
+    // Check if the existing screening is stale (older than 5 minutes for better UX)
     if (existingInFlight) {
       const screeningAge = Date.now() - new Date(existingInFlight.createdAt).getTime();
-      const STALE_THRESHOLD = 30 * 60 * 1000; // 30 minutes
+      const STALE_THRESHOLD = 5 * 60 * 1000; // 5 minutes (reduced from 30)
 
       // Also check if the applicants in the screening request still exist
       const existingApplicants = await Applicant.find({ _id: { $in: existingInFlight.applicantIds } });
@@ -71,12 +72,16 @@ export async function createScreening(req: Request, res: Response) {
           errorMessage: `Screening request expired (${reason})`,
           completedAt: new Date().toISOString(),
         });
-        // Don't return, allow new screening to proceed
       } else {
-        return res.status(409).json({
-          success: false,
-          error: 'A screening request for this job and applicant set is already in progress',
-          data: { screeningRequestId: existingInFlight._id.toString() },
+        logger.info(`[Screening] Screening already in progress: ${existingInFlight._id} (${screeningAge}ms old)`);
+        return res.status(200).json({
+          success: true,
+          data: {
+            screeningRequestId: existingInFlight._id.toString(),
+            status: existingInFlight.status,
+            applicantsCount: existingInFlight.applicantIds.length,
+            message: 'Screening already in progress',
+          },
         } satisfies ApiResponse);
       }
     }
@@ -207,10 +212,22 @@ async function runScreeningAsync(
     const userSettings = await UserSettingsModel.findOne({ userId });
     const userApiKey = userSettings?.geminiApiKey;
 
+    // Progress callback to update screening request
+    const updateProgress = async (currentBatch: number, totalBatches: number, step: string) => {
+      const progress = Math.round((currentBatch / totalBatches) * 100);
+      await ScreeningRequestModel.findByIdAndUpdate(screeningRequestId, {
+        currentBatch,
+        totalBatches,
+        progressPercentage: progress,
+        currentStep: step,
+      });
+    };
+
     // Create AI service with user's API key (will fall back to server key if not provided)
     const aiService = createAIScreeningService(userApiKey);
 
-    const result = await aiService.screenApplicants(jobPosting, profiles, shortlistSize);
+    await updateProgress(0, Math.ceil(applicants.length / 5), 'Starting AI analysis...');
+    const result = await aiService.screenApplicants(jobPosting, profiles, shortlistSize, updateProgress);
 
     // Persist the result
     await ScreeningResultModel.create({
@@ -221,6 +238,8 @@ async function runScreeningAsync(
     // Update request with completed status
     await ScreeningRequestModel.findByIdAndUpdate(screeningRequestId, {
       status: 'completed',
+      progressPercentage: 100,
+      currentStep: 'Completed',
       completedAt: new Date().toISOString(),
     });
 
@@ -232,6 +251,7 @@ async function runScreeningAsync(
     // Update request with failed status and error details
     await ScreeningRequestModel.findByIdAndUpdate(screeningRequestId, {
       status: 'failed',
+      currentStep: 'Failed',
       errorMessage,
       errorDetails: {
         fallbackUsed: true,
@@ -257,8 +277,11 @@ export async function getScreeningResult(req: Request, res: Response) {
         data: {
           status: screeningRequest.status,
           message: screeningRequest.status === 'processing'
-            ? 'AI is evaluating candidates...'
+            ? screeningRequest.currentStep || 'AI is evaluating candidates...'
             : screeningRequest.errorMessage || 'Unknown error',
+          progress: screeningRequest.progressPercentage || 0,
+          currentBatch: screeningRequest.currentBatch || 0,
+          totalBatches: screeningRequest.totalBatches || 0,
         },
       } satisfies ApiResponse);
     }
@@ -522,3 +545,5 @@ function normalizeSkillName(name: string): string {
   if (v === 'ts') return 'TypeScript';
   return name.trim();
 }
+
+// ... rest of the code remains the same ...

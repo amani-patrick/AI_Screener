@@ -142,8 +142,12 @@ export interface ScreeningRequest {
   createdAt: string;
   completedAt?: string;
   errorMessage?: string;
+  // Progress tracking
+  currentBatch?: number;
+  totalBatches?: number;
+  progressPercentage?: number;
+  currentStep?: string;
 }
- 
 
 export interface CandidateScore {
   applicantId: string;
