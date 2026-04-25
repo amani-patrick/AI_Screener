@@ -59,9 +59,10 @@ export class AIScreeningService {
     const genAI = new GoogleGenerativeAI(apiKey);
     this.model = genAI.getGenerativeModel({
       model: MODEL_NAME,
+      systemInstruction: this.getSystemPersona(),
       generationConfig: {
-        temperature: 0.2,
-        topP: 0.85,
+        temperature: 0.15, // Slightly lower for more consistency
+        topP: 0.9,
         maxOutputTokens: 8192,
         responseMimeType: 'application/json',
       },
@@ -112,21 +113,32 @@ export class AIScreeningService {
     }
 
     logger.info(`[AI] Starting screening for job "${job.title}" with ${applicants.length} applicants using ${MODEL_NAME}`);
-    logger.info(`[AI] Shortlist size: ${shortlistSize}, Batch size: 5, Total batches: ${Math.ceil(applicants.length / 5)}`);
+    
+    // Algorithm: Heuristic Pre-sorting
+    // We sort candidates by baseline skill match so that the most promising candidates are processed in the first batches
+    const sortedApplicants = this.heuristicSort(job, applicants);
     
     const BATCH_SIZE = 5;
-    const batches = this.chunk(applicants, BATCH_SIZE);
-    const allScores: GeminiCandidateOutput[] = [];
+    const batches = this.chunk(sortedApplicants, BATCH_SIZE);
+    
+    const CONCURRENCY_LIMIT = 3;
+    logger.info(`[AI] Processing ${batches.length} batches with concurrency limit ${CONCURRENCY_LIMIT}`);
 
-    for (let i = 0; i < batches.length; i++) {
-      logger.info(`[AI] Processing batch ${i + 1}/${batches.length} (${batches[i].length} applicants)`);
-      if (progressCallback) {
-        await progressCallback(i + 1, batches.length, `Processing batch ${i + 1}/${batches.length}...`);
-      }
-      const batchScores = await this.evaluateBatch(job, batches[i]);
+    const allScores: GeminiCandidateOutput[] = [];
+    let completedBatches = 0;
+
+    await this.pMap(batches, async (batch, i) => {
+      logger.info(`[AI] Starting batch ${i + 1}/${batches.length} (${batch.length} applicants)`);
+      
+      const batchScores = await this.evaluateBatch(job, batch);
       allScores.push(...batchScores);
+      
+      completedBatches++;
+      if (progressCallback) {
+        await progressCallback(completedBatches, batches.length, `Completed batch ${completedBatches}/${batches.length}...`);
+      }
       logger.info(`[AI] Completed batch ${i + 1}/${batches.length}, total scores so far: ${allScores.length}`);
-    }
+    }, CONCURRENCY_LIMIT);
 
     // Compute final weighted scores and rank
     const scoredCandidates = allScores
@@ -242,13 +254,23 @@ private async evaluateBatch(
     const jobContext = this.formatJobContext(job);
     const candidatesContext = applicants.map((a) => this.formatApplicantProfile(a)).join('\n\n---\n\n');
 
-    return `You are TalentIQ, an expert AI recruiting assistant specialised in objective, bias-free talent evaluation.
+    return `
+## JOB REQUIREMENTS
+${jobContext}
+
+## CANDIDATES TO EVALUATE (${applicants.length})
+${candidatesContext}
+
+Evaluate these ${applicants.length} candidates. Return a JSON array of ${applicants.length} objects.`;
+  }
+
+  private getSystemPersona(): string {
+    return `You are TalentIQ, an expert AI recruiting assistant specialized in objective, bias-free talent evaluation.
  
 ## Your Task
-Evaluate each candidate against the job requirements below. Score each candidate on four dimensions and provide structured reasoning that a recruiter can act on immediately.
+Evaluate each candidate against the specific job requirements. Score each candidate on four dimensions (0-100) and provide structured reasoning that a recruiter can act on immediately.
  
 ## Scoring Rubric (apply rigorously)
-Each dimension is scored 0–100:
  
 **SKILLS SCORE (35% weight)**
 - 90–100: Exceeds all required skills; deep expertise in mandatory skills
@@ -284,33 +306,20 @@ Each dimension is scored 0–100:
 - **maybe**: Overall score 50–69; some compelling attributes but notable gaps
 - **no**: Overall score < 50; does not meet minimum requirements
  
-## Job Requirements
-${jobContext}
- 
-## Candidates to Evaluate
-${candidatesContext}
- 
-## Required Output Format
-Return ONLY a valid JSON array. No preamble, no markdown, no explanation outside the JSON.
-Each element must have exactly these fields:
- 
-[
-  {
-    "applicantId": "string — exact ID from candidate profile",
-    "skillsScore": number (0–100),
-    "experienceScore": number (0–100),
-    "educationScore": number (0–100),
-    "relevanceScore": number (0–100),
-    "strengths": ["string", "string", "string"],
-    "gaps": ["string", "string"],
-    "recommendation": "strong_yes" | "yes" | "maybe" | "no",
-    "reasoning": "string — 3-5 sentence recruiter-facing explanation covering why this candidate does or does not fit. Be specific: mention skill names, years, achievements. Avoid vague language.",
-    "keyHighlights": ["string — specific standout fact", "string"],
-    "riskFactors": ["string — specific concern", "string"]
-  }
-]
- 
-Evaluate all ${applicants.length} candidates. Return all ${applicants.length} objects in the array.`;
+## Output Format
+Return ONLY a valid JSON array of objects. No preamble, no markdown.
+Fields per object:
+- applicantId: (string) Exact ID from profile
+- skillsScore: (number 0-100)
+- experienceScore: (number 0-100)
+- educationScore: (number 0-100)
+- relevanceScore: (number 0-100)
+- strengths: (string[]) Top 2-3 technical/soft fits
+- gaps: (string[]) Specific missing requirements
+- recommendation: "strong_yes" | "yes" | "maybe" | "no"
+- reasoning: (string) 3-5 sentence recruiter-facing explanation. Mention specific skills, years, and achievements.
+- keyHighlights: (string[]) Specific standout facts
+- riskFactors: (string[]) Concerns for the recruiter`;
   }
    // Format a job posting into prompt context
 
@@ -574,6 +583,45 @@ ${rawSection}
       keyHighlights: [],
       riskFactors: ['Evaluation failed'],
     };
+  }
+
+  // Algorithm: Heuristic pre-sorting to prioritize likely candidates
+  private heuristicSort(job: JobPosting, applicants: TalentProfile[]): TalentProfile[] {
+    const mandatorySkills = job.requiredSkills.filter(s => s.mandatory).map(s => s.name.toLowerCase());
+    
+    return [...applicants].sort((a, b) => {
+      const aSkills = new Set(a.skills.map(s => s.name.toLowerCase()));
+      const bSkills = new Set(b.skills.map(s => s.name.toLowerCase()));
+      
+      const aHits = mandatorySkills.filter(s => aSkills.has(s)).length;
+      const bHits = mandatorySkills.filter(s => bSkills.has(s)).length;
+      
+      // Secondary sort: headline keyword match
+      if (aHits === bHits) {
+        const titleWords = job.title.toLowerCase().split(' ');
+        const aTitleHits = titleWords.filter(w => a.headline.toLowerCase().includes(w)).length;
+        const bTitleHits = titleWords.filter(w => b.headline.toLowerCase().includes(w)).length;
+        return bTitleHits - aTitleHits;
+      }
+      
+      return bHits - aHits;
+    });
+  }
+
+  // Helper: Simple parallel map with concurrency limit
+  private async pMap<T, R>(items: T[], mapper: (item: T, index: number) => Promise<R>, concurrency: number): Promise<void> {
+    const queue = [...items.entries()];
+    
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item) break;
+        const [index, val] = item;
+        await mapper(val, index);
+      }
+    });
+
+    await Promise.all(workers);
   }
 
   private geminiDisabledFallback(applicantId: string): GeminiCandidateOutput {

@@ -95,6 +95,10 @@ export async function createScreening(req: Request, res: Response) {
       shortlistSize,
       userId,
       status: 'processing',
+      totalBatches: Math.ceil(applicants.length / 5),
+      currentBatch: 0,
+      progressPercentage: 0,
+      currentStep: 'Initializing AI service...',
     });
 
     // Increment job's applicant count
