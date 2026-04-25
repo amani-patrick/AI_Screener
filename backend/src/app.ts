@@ -90,6 +90,7 @@ screeningRouter.post('/', authenticate, screeningCtrl.createScreening);
 screeningRouter.get('/', authenticate, screeningCtrl.listScreenings);
 screeningRouter.get('/metrics/evaluate', authenticate, screeningCtrl.evaluateScreeningQuality);
 screeningRouter.get('/:id', authenticate, screeningCtrl.getScreeningResult);
+screeningRouter.delete('/clear-stuck', authenticate, screeningCtrl.clearStuckScreenings);
 screeningRouter.post('/upload/csv', authenticate, upload.single('file'), screeningCtrl.uploadCSVApplicants);
 app.use('/api/screenings', screeningRouter);
 

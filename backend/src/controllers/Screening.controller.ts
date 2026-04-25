@@ -54,12 +54,31 @@ export async function createScreening(req: Request, res: Response) {
       applicantSetHash,
       status: { $in: ['pending', 'processing'] },
     });
+    // Check if the existing screening is stale (older than 30 minutes)
     if (existingInFlight) {
-      return res.status(409).json({
-        success: false,
-        error: 'A screening request for this job and applicant set is already in progress',
-        data: { screeningRequestId: existingInFlight._id.toString() },
-      } satisfies ApiResponse);
+      const screeningAge = Date.now() - new Date(existingInFlight.createdAt).getTime();
+      const STALE_THRESHOLD = 30 * 60 * 1000; // 30 minutes
+
+      // Also check if the applicants in the screening request still exist
+      const existingApplicants = await Applicant.find({ _id: { $in: existingInFlight.applicantIds } });
+      const applicantsStillExist = existingApplicants.length === existingInFlight.applicantIds.length;
+
+      if (screeningAge > STALE_THRESHOLD || !applicantsStillExist) {
+        const reason = !applicantsStillExist ? 'applicants deleted' : 'timeout';
+        logger.warn(`[Screening] Found stale screening request (${screeningAge}ms old, ${reason}), marking as failed`);
+        await ScreeningRequestModel.findByIdAndUpdate(existingInFlight._id, {
+          status: 'failed',
+          errorMessage: `Screening request expired (${reason})`,
+          completedAt: new Date().toISOString(),
+        });
+        // Don't return, allow new screening to proceed
+      } else {
+        return res.status(409).json({
+          success: false,
+          error: 'A screening request for this job and applicant set is already in progress',
+          data: { screeningRequestId: existingInFlight._id.toString() },
+        } satisfies ApiResponse);
+      }
     }
 
     // Create screening request record
@@ -272,6 +291,52 @@ export async function getScreeningResult(req: Request, res: Response) {
   } catch (err) {
     logger.error('[Screening] getScreeningResult error:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve result' } satisfies ApiResponse);
+  }
+}
+
+// Clear stuck screenings (admin endpoint)
+export async function clearStuckScreenings(req: Request, res: Response) {
+  try {
+    const { jobId } = req.query;
+    const userId = req.userId || 'demo-recruiter';
+
+    const filter: Record<string, any> = {
+      status: { $in: ['pending', 'processing'] },
+    };
+
+    if (jobId) {
+      filter.jobId = jobId;
+    } else {
+      // Only clear screenings for the current user if no jobId specified
+      filter.userId = userId;
+    }
+
+    const stuckScreenings = await ScreeningRequestModel.find(filter);
+    const stuckCount = stuckScreenings.length;
+
+    if (stuckCount === 0) {
+      return res.json({
+        success: true,
+        data: { message: 'No stuck screenings found', cleared: 0 },
+      } satisfies ApiResponse);
+    }
+
+    // Mark all stuck screenings as failed
+    await ScreeningRequestModel.updateMany(filter, {
+      status: 'failed',
+      errorMessage: 'Screening cleared by user',
+      completedAt: new Date().toISOString(),
+    });
+
+    logger.info(`[Screening] Cleared ${stuckCount} stuck screenings for user ${userId}${jobId ? ` and job ${jobId}` : ''}`);
+
+    return res.json({
+      success: true,
+      data: { message: `Cleared ${stuckCount} stuck screenings`, cleared: stuckCount },
+    } satisfies ApiResponse);
+  } catch (err) {
+    logger.error('[Screening] clearStuckScreenings error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to clear screenings' } satisfies ApiResponse);
   }
 }
 
